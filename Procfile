@@ -1,1 +1,1 @@
-web: python todaynag/manage.py runserver "0.0.0.0:$PORT" 
+web: python hellodjango/manage.py runserver "0.0.0.0:$PORT" 
