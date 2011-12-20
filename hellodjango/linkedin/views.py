@@ -49,10 +49,16 @@ def oauth_login(request):
 @login_required
 def home(request):
     now = datetime.datetime.now()
-    html = "<html><body>It is now %s.</body></html>" % now
-    html += request.user.get_profile().oauth_token
+    html = "<html><body>"
+    token = oauth.Token(request.user.get_profile().oauth_token,request.user.get_profile().oauth_secret)
+    client = oauth.Client(consumer,token)
+    headers = {'x-li-format':'json'}
+    url = "http://api.linkedin.com/v1/people/~:(id,first-name,last-name,headline)"
+    resp, content = client.request(url, "GET", headers=headers)
+    profile = json.loads(content)
+    html += profile['firstName'] + " " + profile['lastName'] + "<br/>" + profile['headline']
     return HttpResponse(html)
-
+   
 @login_required
 def oauth_logout(request):
     # Log a user out using Django's logout function and redirect them
