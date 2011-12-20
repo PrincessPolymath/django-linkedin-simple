@@ -76,7 +76,7 @@ def oauth_authenticated(request):
     access_token = dict(cgi.parse_qsl(content))
 
     headers = {'x-li-format':'json'}
-    url = "http://api.linkedin.com/v1/people/~:(id,first-name,last-name,industry,phone-numbers)"
+    url = "http://api.linkedin.com/v1/people/~:(id,first-name,last-name,industry)"
     token = oauth.Token(access_token['oauth_token'],
         access_token['oauth_token_secret'])
     client = oauth.Client(consumer,token)
@@ -102,11 +102,6 @@ def oauth_authenticated(request):
         userprofile.user = user
         userprofile.oauth_token = access_token['oauth_token']
         userprofile.oauth_secret = access_token['oauth_token_secret']
-        if "phoneNumbers" in profile:
-        	for phone_number in profile['phoneNumbers']['values']:
-        		userprofile.phone_number = re.sub(r"\D","",phone_number['phoneNumber'])
-        		if phone_number['phoneType'] == 'mobile':
-        			continue
         userprofile.save()
 
     # Authenticate the user and log them in using Django's pre-built 
