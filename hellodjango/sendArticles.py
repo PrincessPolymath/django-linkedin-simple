@@ -13,15 +13,15 @@ import datetime
 import httplib2
 import psycopg2
 
-account = "AC80f1b83ec7f84c4fbf7977330b503745"
-token = "ac026657401b239fdce4d14c182820fe"
+account = "TWILIO_ACCOUNT_NUMBER"
+token = "TWILIO_TOKEN"
 twilioclient = TwilioRestClient(account, token)
 
 url = "http://api.linkedin.com/v1/people/~/topics:(description,id,topic-stories:(topic-articles:(relevance-data,article-content:(id,title,resolved-url))))"
 
 consumer = oauth.Consumer(
-        key="1iK9RUZ1FLJaLUpp90xztjhJXLkdTooiNqXMAORUrpoWJaR0cozd863qyIwvb0ZJ",
-        secret="fbW_tq9SrAQ_8KM9dlcbSW5oGjmd3aJWVDvs1mcTbFzmkBRQSRO4DeddfWlEN0b9")
+        key="LINKEDIN_API_KEY",
+        secret="LINKEDIN_API_SECRET"
 
 users = User.objects.all()
 
@@ -52,11 +52,11 @@ for djangouser in users:
 					# This is where we get the shortened URL from google because LinkedIn doesn't provide one
 					http = httplib2.Http()
 					body = {"longUrl": article['articleContent']['resolvedUrl']}
-					resp,content = http.request("https://www.googleapis.com/urlshortener/v1/url?key=AIzaSyCEPv85KrJIKGX5sYWEy267lQCYcOrUg1s","POST",body=simplejson.dumps(body),headers={"Content-Type":"application/json"})
+					resp,content = http.request("https://www.googleapis.com/urlshortener/v1/url?key=YOUR_GOOGLE_API_KEY","POST",body=simplejson.dumps(body),headers={"Content-Type":"application/json"})
 					googleresponse = simplejson.loads(content)
 					sentarticle = SentArticle(article_number=article['articleContent']['id'],user=djangouser,timestamp=datetime.datetime.today())	
 					sentarticle.save()
 					bodytext = article['articleContent']['title'] + " " + googleresponse['id']
 					bodytext += " ('save %s')" % sentarticle.id
-					message = twilioclient.sms.messages.create(to="+1" + phone, from_="+18312161666", body=bodytext)
+					message = twilioclient.sms.messages.create(to="+1" + phone, from_="+YOUR_TWILIO_PHONE_NUMBER", body=bodytext)
 				
