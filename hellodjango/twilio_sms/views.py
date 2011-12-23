@@ -1,13 +1,13 @@
 # Python
 import oauth2 as oauth
 import simplejson as json
-import re
+import re,sys
 from xml.dom.minidom import getDOMImplementation,parse,parseString
+from twilio.rest import TwilioRestClient
 
 # Django
-from django.http import HttpResponse
+from django.http import HttpResponse,HttpResponseNotAllowed,HttpResponseRedirect
 from django.shortcuts import render_to_response
-from django.http import HttpResponseRedirect
 from django.conf import settings
 from django.views.decorators.csrf import csrf_exempt
 from django.contrib.auth.models import User
@@ -18,6 +18,16 @@ from linkedin.models import UserProfile,SentArticle
 # from settings.py
 consumer = oauth.Consumer(settings.LINKEDIN_TOKEN, settings.LINKEDIN_SECRET)
 client = oauth.Client(consumer)
+
+def welcome(request):
+	account = "AC80f1b83ec7f84c4fbf7977330b503745"
+	token = "ac026657401b239fdce4d14c182820fe"
+	twilioclient = TwilioRestClient(account, token)
+	profile = request.user.get_profile()
+	if profile.phone_number:
+		message = twilioclient.sms.messages.create(to="+1" + profile.phone_number, from_="+18312161666", body="Welcome to the LinkedIn SMS Notifier! Reply with 'todayhelp' for options")
+	
+	return HttpResponseRedirect("/")
 
 def createSmsResponse(responsestring):
 	impl = getDOMImplementation()
@@ -34,6 +44,7 @@ def createSmsResponse(responsestring):
 def sms_reply(request):
     if request.method == 'POST':
         params = request.POST
+        print params
         phone = re.sub('\+1','',params['From'])
         smsuser = User.objects.get(userprofile__phone_number=phone)
         responsetext = "This is my reply text"
@@ -43,30 +54,45 @@ def sms_reply(request):
         commandmatch = re.compile(r'(\w+)\b',re.I)
         matches = commandmatch.match(params['Body'])
         command = matches.group(0).lower()
-        print command
         
-        if command == "help":
-        	helpstring = "Commands: 'cancel' to cancel Today SMS; 'level #number#' to change minimum score;"
-        	helpstring += "'save #article#' to save; 'share #article# #comment#' to share"
-        	return HttpResponse(createSmsResponse(helpstring))
+        # Cancel notifications by setting score to zero
+        # Command is 'cancel'
         if command == 'cancel':
         	profile = smsuser.get_profile()
         	profile.min_score = 0
         	profile.save()
         	return HttpResponse(createSmsResponse("Today SMS Service Cancelled"))
+        	
+        # Change level for notifications by setting score to requested level
+        # Command is 'level \d'
         if command == 'level':
-        	levelmatch = re.compile(r'level (\d+)(.*)',re.I)
+        	levelmatch = re.compile(r'level (\d)(.*)',re.I)
         	matches = levelmatch.search(params['Body'])
-        	level = matches.group(1)
+        	
+        	try:
+	        	level = int(matches.group(1))
+	        except:
+	        	e = sys.exc_info()[1]
+	        	print "ERROR: %s" % (str(e))
+	        	return HttpResponse(createSmsResponse("Please use a valid level (1-9)."))
+        	
         	profile = smsuser.get_profile()
         	profile.min_score = level
         	profile.save()
         	return HttpResponse(createSmsResponse("Today SMS minimum score changed to %d" % int(level)))
+        	
+        # Save an article
+        # Command is 'save <articlenum>'
         if command == 'save':
         	savematch = re.compile(r'save (\d+)(.*)',re.I)
         	matches = savematch.search(params['Body'])
-        	article = matches.group(1)
-        	sentarticle = SentArticle.objects.get(user=smsuser, id=article)
+        	try:
+	        	article = matches.group(1)
+        		sentarticle = SentArticle.objects.get(user=smsuser, id=article)
+	        except:
+	        	e = sys.exc_info()[1]
+	        	print "ERROR: %s" % (str(e))
+	        	return HttpResponse(createSmsResponse("Please use a valid article number with save."))
         	
         	responsetext = "Saved article: %s" % (sentarticle.article_title)
         	saveurl = "http://api.linkedin.com/v1/people/~/articles"
@@ -83,17 +109,31 @@ def sms_reply(request):
         	text_node = xmlsavedoc.createTextNode(sentarticle.article_number)
         	id_element.appendChild(text_node)
         	body = xmlsavedoc.toxml(encoding="utf-8")
-        	print body
+        	
         	resp, content = client.request(saveurl, "POST",body=body,headers={"Content-Type":"text/xml"})
         	if (resp.status == 200):
         		return HttpResponse(createSmsResponse(responsetext))
+        	else:
+        		return HttpResponse(createSmsResponse("Unable to save post: %s" % content))
+        
+        # Share an article
+        # Command is 'share <articlenum> <comment>'
+        # If no comment is included, a generic one is sent
         if command == 'share':
         	sharematch = re.compile(r'Share (\d+) (.*)')
         	matches = sharematch.search(params['Body'])
-        	article = matches.group(1)
-        	comment = matches.group(2)
-        	sentarticle = SentArticle.objects.get(user=smsuser, id=article)
-        	
+        	try:
+        		article = matches.group(1)
+	        	sentarticle = SentArticle.objects.get(user=smsuser, id=article)
+        		comment = matches.group(2)
+	        except:
+	        	if sentarticle and not comment:
+	        		comment = "Sharing an article from the LinkedIn SMS System"
+	        	else:		
+	        		e = sys.exc_info()[1]
+	        		print "ERROR: %s" % (str(e))
+	        		return HttpResponse(createSmsResponse("Please use a valid article number with share and include a comment."))
+        	        	
         	responsetext = "Shared article: %s" % (sentarticle.article_title)
         	shareurl = "http://api.linkedin.com/v1/people/~/shares"
         	body = {"comment":comment,
@@ -106,3 +146,13 @@ def sms_reply(request):
         	resp, content = client.request(shareurl, "POST",body=json.dumps(body),headers={"Content-Type":"application/json"})
         	if (resp.status == 201):
         		return HttpResponse(createSmsResponse(responsetext))
+        	else:
+        		return HttpResponse(createSmsResponse("Unable to share post: %s" % content))
+        		
+        # If command is help, or anything we didn't recognize, send help back
+        helpstring = "Commands: 'cancel' to cancel Today SMS; 'level #number#' to change minimum score;"
+        helpstring += "'save #article#' to save; 'share #article# #comment#' to share"
+        return HttpResponse(createSmsResponse(helpstring))
+        		
+    # If it's not a post, return an error
+    return HttpResponseNotAllowed('POST')
